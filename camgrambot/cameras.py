@@ -14,7 +14,7 @@ class Camera(pydantic.BaseModel):
 
 
 class CamerasService:
-    cameras: list[Camera] = []
+    cameras: dict[str, Camera] = dict()
     """Singleton local storage of cameras.
     """
 
@@ -25,7 +25,7 @@ class CamerasService:
     CAMERA_PICTURE_ENDPOINT = "https://camaras.vigo.org/webcam/cam.php?id={id}"
 
     @classmethod
-    def _get_camera_picture_endpoint(cls, camera_id: str) -> str:
+    def get_camera_picture_url(cls, camera_id: str) -> str:
         return cls.CAMERA_PICTURE_ENDPOINT.format(id=camera_id)
 
     @classmethod
@@ -34,12 +34,18 @@ class CamerasService:
 
     @classmethod
     async def load_cameras_to_cache(cls):
-        cls.cameras = await cls.get_cameras_from_api()
-        print(f"Loaded {len(cls.cameras)} cameras")
+        cameras_list = await cls.get_cameras_from_api()
+        print(f"Loaded {len(cameras_list)} cameras")
+
+        cls.cameras = {cam.id: cam for cam in cameras_list}
         return cls.cameras
 
     @classmethod
-    async def get_cameras_from_api(cls):
+    async def get_camera_by_id(cls, camera_id: str) -> Camera | None:
+        return cls.cameras.get(camera_id)
+
+    @classmethod
+    async def get_cameras_from_api(cls) -> list[Camera]:
         async with cls._get_http_client() as client:
             client: httpx.AsyncClient
             r = await client.get(cls.CAMERAS_API)
@@ -54,15 +60,18 @@ class CamerasService:
         """
         async with cls._get_http_client() as client:
             client: httpx.AsyncClient
-            r = await client.head(cls._get_camera_picture_endpoint(camera_id))
+            r = await client.head(cls.get_camera_picture_url(camera_id))
             r.raise_for_status()
-            last_modified_header = r.headers["Last-Modified"]
-            return int(dateparser.parse(last_modified_header).timestamp())
+            return cls._extract_picture_timestamp_from_headers(r.headers)
 
     @classmethod
-    async def get_camera_picture(cls, camera_id: str) -> bytes:
+    async def get_camera_picture(cls, camera_id: str) -> [bytes, int]:
         async with cls._get_http_client() as client:
             client: httpx.AsyncClient
-            r = await client.get(cls._get_camera_picture_endpoint(camera_id))
+            r = await client.get(cls.get_camera_picture_url(camera_id))
             r.raise_for_status()
-            return await r.aread()
+            return await r.aread(), cls._extract_picture_timestamp_from_headers(r.headers)
+
+    @classmethod
+    def _extract_picture_timestamp_from_headers(cls, headers: dict) -> int:
+        return int(dateparser.parse(headers["Last-Modified"]).timestamp())
