@@ -3,10 +3,11 @@ import traceback
 
 import aiogram.types
 
-from ..cameras import CamerasService
+from ..cameras import Camera, CamerasService
 
 
 INLINE_QUERY_GET_CAMERA = "GetCamera_"
+INLINE_QUERY_UPDATE_CAMERA = "UpdateCamera_"
 
 dispatcher = aiogram.Dispatcher()
 
@@ -31,6 +32,8 @@ async def message_handler(message: aiogram.types.Message):
 async def callback_query_handler(query: aiogram.types.CallbackQuery):
     if query.data.startswith(INLINE_QUERY_GET_CAMERA):
         await get_camera_button_query_handler(query)
+    elif query.data.startswith(INLINE_QUERY_UPDATE_CAMERA):
+        await update_camera_button_query_handler(query)
 
     await query.bot.answer_callback_query(query.id)
 
@@ -67,18 +70,13 @@ async def get_camera_button_query_handler(query: aiogram.types.CallbackQuery):
 
     # noinspection PyBroadException
     try:
-        picture_bytes, picture_timestamp = await CamerasService.get_camera_picture(camera.id)
-        picture_datetime = datetime.datetime.fromtimestamp(picture_timestamp, tz=datetime.timezone.utc).astimezone()
-        picture_datetime_text = picture_datetime.strftime("%d/%m/%y %H:%M:%S")
-        picture_input_file = aiogram.types.input_file.BufferedInputFile(
-            file=picture_bytes,
-            filename=f"Camera_{camera.id}_{picture_timestamp}.jpg",
-        )
+        picture_input_file, reply_markup, caption = await get_camera_message(camera)
 
         await query.bot.send_photo(
             chat_id=chat_id,
             photo=picture_input_file,
-            caption=f"Camera {camera.name} (#{camera.id})\n{picture_datetime_text}",
+            reply_markup=reply_markup,
+            caption=caption,
         )
 
     except Exception:
@@ -87,3 +85,50 @@ async def get_camera_button_query_handler(query: aiogram.types.CallbackQuery):
             chat_id=chat_id,
             text="Error trying to get camera snapshot"
         )
+
+
+async def update_camera_button_query_handler(query: aiogram.types.CallbackQuery):
+    chat_id = query.message.chat.id
+    camera_id = query.data.removeprefix(INLINE_QUERY_UPDATE_CAMERA)
+
+    camera = await CamerasService.get_camera_by_id(camera_id)
+    if not camera:
+        # TODO Show some alert
+        return
+
+    # noinspection PyBroadException
+    try:
+        picture_input_file, reply_markup, caption = await get_camera_message(camera)
+
+        # TODO Detect when the picture is not updated (same as last sent)
+        await query.bot.edit_message_media(
+            chat_id=chat_id,
+            message_id=query.message.message_id,
+            media=aiogram.types.InputMediaPhoto(media=picture_input_file, caption=caption),
+            reply_markup=reply_markup,
+        )
+
+    except Exception:
+        traceback.print_exc()
+        # TODO Show some alert
+
+
+async def get_camera_message(camera: Camera) -> tuple[aiogram.types.input_file.BufferedInputFile, aiogram.types.InlineKeyboardMarkup, str]:
+    picture_bytes, picture_timestamp = await CamerasService.get_camera_picture(camera.id)
+    picture_datetime = datetime.datetime.fromtimestamp(picture_timestamp, tz=datetime.timezone.utc).astimezone()
+    picture_datetime_text = picture_datetime.strftime("%d/%m/%y %H:%M:%S")
+    picture_input_file = aiogram.types.input_file.BufferedInputFile(
+        file=picture_bytes,
+        filename=f"Camera_{camera.id}_{picture_timestamp}.jpg",
+    )
+
+    reply_markup = aiogram.types.InlineKeyboardMarkup(inline_keyboard=[
+        [aiogram.types.InlineKeyboardButton(
+            text="Update",
+            callback_data=INLINE_QUERY_UPDATE_CAMERA + camera.id,
+        )]
+    ])
+
+    caption = f"Camera {camera.name} (#{camera.id})\n{picture_datetime_text}"
+
+    return picture_input_file, reply_markup, caption
