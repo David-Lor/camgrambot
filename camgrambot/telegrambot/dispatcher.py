@@ -1,3 +1,4 @@
+import datetime
 import traceback
 
 import aiogram.types
@@ -30,7 +31,8 @@ async def message_handler(message: aiogram.types.Message):
 async def callback_query_handler(query: aiogram.types.CallbackQuery):
     if query.data.startswith(INLINE_QUERY_GET_CAMERA):
         await get_camera_button_query_handler(query)
-        return
+
+    await query.bot.answer_callback_query(query.id)
 
 
 async def cameras_message_handler(message: aiogram.types.Message):
@@ -66,6 +68,8 @@ async def get_camera_button_query_handler(query: aiogram.types.CallbackQuery):
     # noinspection PyBroadException
     try:
         picture_bytes, picture_timestamp = await CamerasService.get_camera_picture(camera.id)
+        picture_datetime = datetime.datetime.fromtimestamp(picture_timestamp, tz=datetime.timezone.utc).astimezone()
+        picture_datetime_text = picture_datetime.strftime("%d/%m/%y %H:%M:%S")
         picture_input_file = aiogram.types.input_file.BufferedInputFile(
             file=picture_bytes,
             filename=f"Camera_{camera.id}_{picture_timestamp}.jpg",
@@ -74,7 +78,7 @@ async def get_camera_button_query_handler(query: aiogram.types.CallbackQuery):
         await query.bot.send_photo(
             chat_id=chat_id,
             photo=picture_input_file,
-            caption=f"Camera {camera.name} (#{camera.id})",
+            caption=f"Camera {camera.name} (#{camera.id})\n{picture_datetime_text}",
         )
 
     except Exception:
