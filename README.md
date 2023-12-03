@@ -1,2 +1,3 @@
-# generic-template
-My custom template for generic repositories
+# Telegram CamGramBot
+
+A Telegram bot that sends captures of live public cameras.
