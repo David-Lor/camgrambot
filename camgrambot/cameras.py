@@ -35,6 +35,7 @@ class CamerasService:
     @classmethod
     async def load_cameras_to_cache(cls):
         cls.cameras = await cls.get_cameras_from_api()
+        print(f"Loaded {len(cls.cameras)} cameras")
         return cls.cameras
 
     @classmethod
